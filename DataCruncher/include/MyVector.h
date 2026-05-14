@@ -12,6 +12,7 @@ private:
 
     // 扩容函数
     void reserve(size_t new_cacpacity) {
+        // std::cout << "DEBUG: 正在扩容至 " << new_cacpacity << std::endl;
         if (new_cacpacity <= _capacity) {
             return;
         }
@@ -92,7 +93,10 @@ public:
 
     // 添加元素
     void push_back(const T& value) {
-        if (_size == _capacity) {
+        // if (_size > _capacity) { 
+        //     std::cerr << "警告: 发生严重错误, size 已经超过了 capacity!" << std::endl; 
+        // }
+        if (_size >= _capacity) {
             reserve(_capacity == 0 ? 1 : _capacity * 2);
         }
         data[_size++] = value;
@@ -168,12 +172,14 @@ public:
     }
 
     // 简单的迭代器，非const版本: 允许修改
-    T* begin() { return data; }
-    T* end() { return data + _size; }
+    using iterator = T*;
+    using const_iterator = const T*;
+    iterator begin() { return data; }
+    iterator end() { return data + _size; }
 
     // const版本：只读
-    T* begin() const { return data; }
-    T* end() const { return data + _size; }
+    const_iterator begin() const { return data; }
+    const_iterator end() const { return data + _size; }
 };
 
 template <typename T>
