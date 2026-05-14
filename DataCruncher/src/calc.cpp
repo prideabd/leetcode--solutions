@@ -2,7 +2,8 @@
 #include <algorithm>
 #include <numeric>
 
-std::vector<int> processData(std::vector<int> input) {
+MyVector<int> processData(const MyVector<int>& data) {
+    MyVector<int> input = data;
     // 1.排序
     std::sort(input.begin(), input.end());
     // 2.去重
@@ -11,10 +12,23 @@ std::vector<int> processData(std::vector<int> input) {
     return input;
 }
 
-double calculateAverage(const std::vector<int>& data) {
+double calculateAverage(const MyVector<int>& data) {
     if (data.empty()) {
         return 0.0;
     }
     double sum = std::accumulate(data.begin(), data.end(), 0.0);
     return sum / data.size();
+}
+
+double calculateMedian(MyVector<int> data) {
+    if (data.empty()) {
+        return 0.0;
+    }
+    std::sort(data.begin(), data.end());
+    size_t size = data.size();
+    if (size % 2 == 0) {
+        return (data[size / 2 - 1] + data[size / 2]) / 2.0;
+    } else {
+        return data[size / 2];
+    }
 }

@@ -11,7 +11,7 @@ include_directories(include)
 add_library(CruncherCore src/calc.cpp)
 
 # 3. 创建可执行文件
-add_executable(DataApp src/main.cpp)
+add_executable(DataApp src/main.cpp include/MyVector.h)
 
 # 4. 链接
 # 告诉系统，DataApp运行依赖CruncherCore库
