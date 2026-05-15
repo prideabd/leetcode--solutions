@@ -129,6 +129,32 @@ namespace dc {
             double variance = sumOfSquares / data.size();
             return std::sqrt(variance);
         }
+        
+        // 6. 计算直方图数据：将数据分成 numBins 个区间
+        static std::pair<std::vector<double>, std::vector<double>> 
+        getHistogram(const MyVector<T>& data, int numBins) {
+            if (data.size() == 0) return {};
+
+            T minVal = data[0]; // 假设已经排序
+            T maxVal = data[data.size() - 1];
+            double range = static_cast<double>(maxVal - minVal);
+            double binWidth = range / numBins;
+
+            std::vector<double> bins(numBins);
+            std::vector<double> x_axis(numBins);
+
+            for (size_t i = 0; i < data.size(); ++i) {
+                int binIdx = static_cast<int>((data[i] - minVal) / binWidth);
+                if (binIdx >= numBins) binIdx = numBins - 1;
+                bins[binIdx]++;
+            }
+
+            for (int i = 0; i < numBins; ++i) {
+                x_axis[i] = minVal + i * binWidth;
+            }
+
+            return {x_axis, bins};
+        }
     };
 }
 
