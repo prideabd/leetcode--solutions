@@ -2,6 +2,8 @@
 #include <iostream>
 #include <algorithm>
 #include <initializer_list>
+#include <new>
+#include <utility>
 
 namespace dc {
     template <typename T>
@@ -11,21 +13,15 @@ namespace dc {
         size_t _size;       // 当前元素个数
         size_t _capacity;   // 最大容量
 
-    public:
-        // 扩容函数
-        void reserve(size_t new_cacpacity) {
-            // std::cout << "DEBUG: 正在扩容至 " << new_cacpacity << std::endl;
-            if (new_cacpacity <= _capacity) {
-                return;
+        // 销毁[first, last)范围内所有对象
+        void destroy_elements(T* first, T* last) {
+            for (; first != last; ++first) {
+                first->~T();
             }
-            T* new_data = new T[new_cacpacity]; // 1.申请空间
-            for (size_t i = 0; i < _size; ++i) {
-                new_data[i] = data[i];          // 2.搬运数据
-            }
-            delete[] data;                      // 3.释放原始数据
-            data = new_data;
-            _capacity = new_cacpacity;
         }
+
+    public:
+        // --- 构造和析构 ---
 
         // 无参构造函数
         MyVector() : data(nullptr), _size(0), _capacity(0) {
@@ -36,17 +32,59 @@ namespace dc {
         MyVector(std::initializer_list<T> list) {
             _size = list.size();
             _capacity = list.size();
-            data = new T(_capacity);
+            if (_capacity > 0) {
+                data = static_cast<T*>(::operator new(_capacity * sizeof(T)));
+            } else {
+                data = nullptr;
+            }
+            // data = new T[_capacity];
             // std::cout << "[Constructor] 列表构造: 申请空间 " << _capacity 
                     //   << " at " << data << std::endl;
 
             size_t i = 0;
             for (const T& item : list) {
-                data[i++] = item;
+                new (data + i++) T(item);
+                // data[i++] = item;
             }
         }
 
-        // 赋值构造
+        // 移动构造函数
+        MyVector(MyVector&& other) noexcept {
+            data = other.data;
+            _size = other._size;
+            _capacity = other._capacity;
+            other.data = nullptr;
+            other._size = 0;
+            other._capacity = 0;
+        }
+
+        // 拷贝构造函数:申请内存并就地拷贝
+        MyVector(const MyVector& other) {
+            _size = other._size;
+            _capacity = other._capacity;
+            if (_capacity > 0) {
+                data = static_cast<T*>(::operator new(_capacity * sizeof(T)));
+                // data = new T[_capacity];
+                // std::cout << "[Constructor] 拷贝构造 (深拷贝): 申请新空间 " << data << std::endl;
+                for (size_t i = 0; i < _size; ++i) {
+                    new (data + i) T(other.data[i]);
+                    // data[i] = other.data[i];
+                }
+            } else {
+                data = nullptr;
+            }
+        }
+
+        // 析构函数
+        ~MyVector() {
+            // std::cout << "[Destructor] 析构释放: 销毁地址 " << data << std::endl;
+            clear(); // 析构所有对象
+            ::operator delete(data); // 释放内存
+            // delete[] data;
+        }
+
+        
+        // --- 赋值运算符 ---
         // copy_and_swap
         void swap(MyVector& other) noexcept {
             // using std::swap; // 允许编译器在找不到自定义 swap 时使用标准库版本
@@ -71,29 +109,43 @@ namespace dc {
             return *this;
         }
 
-        // 拷贝构造函数
-        MyVector(const MyVector& other) {
-            _size = other._size;
-            _capacity = other._capacity;
-            if (_capacity > 0) {
-                data = new T[_capacity];
-                // std::cout << "[Constructor] 拷贝构造 (深拷贝): 申请新空间 " << data << std::endl;
-                for (size_t i = 0; i < _size; ++i) {
-                    data[i] = other.data[i];
-                }
-            } else {
-                data = nullptr;
+        // --- 核心内存控制 ---
+        // 扩容函数
+        void reserve(size_t new_cacpacity) {
+            // std::cout << "DEBUG: 正在扩容至 " << new_cacpacity << std::endl;
+            if (new_cacpacity <= _capacity) {
+                return;
             }
+            // 1. 分配原始内存
+            T* new_data = static_cast<T*>(::operator new(new_cacpacity * sizeof(T)));
+            // T* new_data = new T[new_cacpacity];
+
+            size_t i = 0;
+            try {
+                // 2. 搬运数据
+                for (; i < _size; ++i) {
+                    new (new_data + i) T(std::move_if_noexcept(data[i]));
+                    // new_data[i] = data[i];
+                    data[i].~T(); // 销毁原对象
+                }
+            }
+            catch (...) {
+                // 3. 异常处理
+                destroy_elements(new_data, new_data + i);
+                ::operator delete(new_data);
+                throw;
+            }
+            // 4. 释放旧内存
+            destroy_elements(data, data + _size);
+            ::operator delete(data);
+            // delete[] data;
+            data = new_data;
+            _capacity = new_cacpacity;
         }
 
-        // 析构函数
-        ~MyVector() {
-            // std::cout << "[Destructor] 析构释放: 销毁地址 " << data << std::endl;
-            delete[] data;
-        }
+        // --- 修改器 ---
 
-
-        // 添加元素
+        // 添加元素到末尾
         void push_back(const T& value) {
             // if (_size > _capacity) { 
             //     std::cerr << "警告: 发生严重错误, size 已经超过了 capacity!" << std::endl; 
@@ -101,8 +153,68 @@ namespace dc {
             if (_size >= _capacity) {
                 reserve(_capacity == 0 ? 1 : _capacity * 2);
             }
-            data[_size++] = value;
+            new (data + _size) T(value);
+            _size++;
+            // data[_size++] = value;
         }
+
+        // 增加右值引用版本(xxx.push_back(std::move(str)))
+        void push_back(T&& value) {
+            if (_size >= _capacity) {
+                reserve(_capacity == 0 ? 1 : _capacity * 2);
+            }
+            new (data + _size) T(std::move(value));
+            _size++;
+        }
+
+         // 删除末尾元素
+        void pop_back() {
+            if (_size > 0) {
+                // 显示调用析构进行销毁
+                data[_size - 1].~T();
+                _size--;
+            }
+        }
+
+        // 清空元素
+        void clear() {
+            destroy_elements(data, data + _size);
+            _size = 0;
+        }
+
+        // 通过指针范围删除元素(迭代器)
+        // 返回被删元素的下一个有效元素
+        T* erase(T* first, T* last) {
+            if (first < begin() || last > end() || first >= last) {
+                return last;
+            } 
+            // 计算移动步长
+            size_t num_to_remove = last - first;
+            T* end_ptr = data + _size;
+
+            // 1. 销毁要删除的对象
+            for (T* p = first; p != last; ++p) {
+                p->~T();
+            }
+            // 2. 移动后面元素
+            for (T* p = last; p != end_ptr; ++p) {
+                // p - num_to_remove代表又回到first位置
+                new (p - num_to_remove) T(std::move(*p));
+                p->~T();
+            }
+            _size -= num_to_remove;
+            return first;
+        }
+        // 通过下标删除元素
+        void erase(size_t index) {
+            if (index >= _size) {
+                return;
+            }
+            // 复用迭代器版
+            erase(data + index, data + index + 1);
+        }
+
+        // --- 访问器 ---
 
         // 为什么要同时拥有[]和at()？
         // []：用于你确定索引合法的地方（比如 for(int i=0; i<v.size(); ++i)）。
@@ -111,9 +223,8 @@ namespace dc {
         T& operator[](size_t index) {
             return data[index];
         }
-        
         // 重载[]运算符，const版本：只读访问，用于const MyVector对象
-        T& operator[](size_t index) const {
+        const T& operator[](size_t index) const {
             return data[index];
         }
 
@@ -124,9 +235,8 @@ namespace dc {
             }
             return data[index];
         }
-
         // 拥有和[]相同的功能，但进行边界检查，const
-        T& at(size_t index) const {
+        const T& at(size_t index) const {
             if (index >= _size) {
                 throw std::out_of_range("MyVector::at() index out of range");
             }
@@ -134,54 +244,37 @@ namespace dc {
         }
 
         // 返回大小
-        size_t size() const {
-            return _size;
-        }
-
+        size_t size() const { return _size; }
+        // 返回最大容量
+        size_t capacity() const { return _capacity; } 
         // 是否为空
-        bool empty() const {
-            return _size == 0;
-        }
-
-        // 通过指针范围删除元素(迭代器)
-        // 返回被删元素的下一个有效元素
-        T* erase(T* first, T* last) {
-            if (first == nullptr || last == nullptr || first >= last) {
-                return last;
-            } 
-            // 计算移动步长
-            size_t num_to_remove = last - first;
-            T* end_ptr = data + _size;
-            // 将[last, end_ptr) 挪到first位置
-            T* current = first;
-            T* next = last;
-            while (next < end_ptr) {
-                *current = *next;
-                current++;
-                next++;
-            }
-            _size -= num_to_remove;
-            return first;
-        }
-
-        // 通过下标删除元素
-        void erase(size_t index) {
-            if (index >= _size) {
-                return;
-            }
-            // 复用迭代器版
-            erase(data + index, data + index + 1);
-        }
+        bool empty() const { return _size == 0; }
 
         // 简单的迭代器，非const版本: 允许修改
         using iterator = T*;
         using const_iterator = const T*;
         iterator begin() { return data; }
         iterator end() { return data + _size; }
-
         // const版本：只读
         const_iterator begin() const { return data; }
         const_iterator end() const { return data + _size; }
+
+        // 获取第一个元素
+        T& front() { return data[0]; }
+        const T& front() const { return data[0]; }
+
+        // 获取最后一个元素
+        T& back() { return data[_size - 1]; }
+        const T& back() const { return data[_size - 1]; }
+
+        // 提供简单sort接口
+        // 目前直接使用std::sort
+        void sort() { std::sort(this->begin(), this->end()); }
+        // 支持自定义排序规则
+        template <typename Compare>
+        void sort(Compare comp) {
+            std::sort(this->begin(), this->end(), comp);
+        }
     };
 
     template <typename T>
