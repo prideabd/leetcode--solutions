@@ -9,6 +9,42 @@
 #include <DataCruncher/DataCruncher.hpp>
 #include <DataCruncher/ReportGenerator.hpp>
 
+// 测试用的复杂结构体
+struct Student {
+    int id;
+    std::string name;
+
+    // 默认构造
+    Student() : id(0), name("Unknown") {
+        std::cout << "[Student] 默认构造: " << name << " (" << this << ")\n";
+    }
+    // 带参构造
+    Student(int i, std::string n) : id(i), name(n) {
+        std::cout << "[Student] 构造: " << name << " (" << this << ")\n";
+    }
+    
+    // 自定义拷贝构造，方便观察
+    Student(const Student& other) : id(other.id), name(other.name) {
+        std::cout << "[Student] 拷贝构造: " << name << " (" << this << ")\n";
+    }
+
+    // 移动构造
+    Student(Student&& other) noexcept : id(other.id), name(std::move(other.name)) {
+        std::cout << "[Student] 移动构造: " << name << " (" << this << ")\n";
+    }
+
+    // 析构函数（新增：用来验证 destroy_elements 是否正确工作）
+    ~Student() {
+        std::cout << "[Student] 析构销毁: " << name << " (" << this << ")\n";
+    }
+
+    // 重载输出
+    friend std::ostream& operator<<(std::ostream& os, const Student& s) {
+        os << "{ID:" << s.id << ", Name:" << s.name << "}";
+        return os;
+    }
+};
+
 // 大数据（例如100万）测试
 void generateBigData(const std::string& filename, size_t count) {
     // 检查文件是否存在
@@ -106,75 +142,55 @@ void runAutomatedTests() {
     std::cout << "--- 所有测试通过！开始执行主程序 ---\n" << std::endl;
 }
 
-// 测试用的复杂结构体
-struct Student {
-    int id;
-    std::string name;
-
-    // 默认构造
-    Student() : id(0), name("Unknown") {}
-    // 带参构造
-    Student(int i, std::string n) : id(i), name(n) {}
-    
-    // 自定义拷贝构造，方便观察
-    Student(const Student& other) : id(other.id), name(other.name) {
-        // std::cout << "[Copying Student: " << name << "]\n";
-    }
-
-    // 移动构造
-    Student(Student&& other) noexcept : id(other.id), name(std::move(other.name)) {
-        // std::cout << "[Moving Student: " << name << "]\n";
-    }
-
-    // 重载输出
-    friend std::ostream& operator<<(std::ostream& os, const Student& s) {
-        os << "{ID:" << s.id << ", Name:" << s.name << "}";
-        return os;
-    }
-};
-
-int main() {
-    // --- 测试 1: 基础类型与空构造 ---
+// --- 测试 1: 基础类型与空构造 ---
+void test_basic_construction() {
     std::cout << ">>> Test 1: Basic Empty Construction\n";
     dc::MyVector<int> v_int; 
     std::cout << "Size: " << v_int.size() << ", Cap: " << v_int.capacity() << "\n";
     v_int.push_back(100);
     std::cout << "After push: " << v_int << "\n\n";
+}
 
-    // --- 测试 2: 嵌套容器 MyVector<MyVector<T>> ---
+// --- 测试 2: 嵌套容器 MyVector<MyVector<T>> ---
+void test_nested_vector() {
     std::cout << ">>> Test 2: Nested Vector (Matrix)\n";
     dc::MyVector<dc::MyVector<double>> matrix;
     
-    // 插入几个子 Vector
     matrix.push_back({1.1, 1.2});
     matrix.push_back({2.1, 2.2, 2.3});
     
-    // 验证嵌套访问
     std::cout << "Matrix row 1, col 2: " << matrix[1][2] << "\n";
     std::cout << "Full Matrix: " << matrix << "\n\n";
+}
 
-    // --- 测试 3: 复杂结构体 (带 std::string) ---
+// --- 测试 3: 复杂结构体 (带 std::string) & erase ---
+void test_complex_struct_and_erase() {
     std::cout << ">>> Test 3: Complex Struct with std::string\n";
     dc::MyVector<Student> class_room;
     
-    // 测试 push_back 触发移动语义
     class_room.push_back(Student(1, "Alex")); 
     class_room.push_back(Student(2, "Gemini"));
     
-    // 测试 erase (中间删除)
     std::cout << "Before erase: " << class_room << "\n";
-    class_room.erase(0); // 删除 Alex
+    class_room.erase(0); 
     std::cout << "After erase:  " << class_room << "\n\n";
+}
 
-    // --- 测试 4: 拷贝与赋值 (Deep Copy) ---
+// --- 测试 4: 拷贝与赋值 (Deep Copy) ---
+void test_deep_copy() {
     std::cout << ">>> Test 4: Deep Copy Validation\n";
+    dc::MyVector<Student> class_room;
+    class_room.push_back(Student(2, "Gemini")); // 准备一个基础数据
+    
     dc::MyVector<Student> class_copy = class_room; 
     class_copy[0].name = "Modified_Name";
     
     std::cout << "Original: " << class_room << "\n";
     std::cout << "Copy:     " << class_copy << " (Should be different)\n\n";
+}
 
-    // --- 测试 5: 异常安全性与内存压力 ---
+// --- 测试 5: 异常安全性与内存压力 ---
+void test_stress_and_clear() {
     std::cout << ">>> Test 5: Stress & Capacity\n";
     dc::MyVector<int> stress;
     for(int i = 0; i < 1000; ++i) {
@@ -182,9 +198,109 @@ int main() {
     }
     std::cout << "Stress Size: " << stress.size() << ", Cap: " << stress.capacity() << "\n";
     stress.clear();
-    std::cout << "After Clear Size: " << stress.size() << ", Cap: " << stress.capacity() << "\n";
+    std::cout << "After Clear Size: " << stress.size() << ", Cap: " << stress.capacity() << "\n\n";
+}
 
-    std::cout << "\n[All Tests Passed!]\n";
+// --- 测试 6: resize() 核心逻辑 ---
+void test_resize() {
+    std::cout << "========================================\n";
+    std::cout << ">>> 开始测试: resize() \n";
+    std::cout << "========================================\n";
+
+    dc::MyVector<Student> vec;
+    std::cout << "1. 初始状态 -> Size: " << vec.size() << ", Cap: " << vec.capacity() << "\n\n";
+
+    std::cout << "--- 产生一个原型对象 fill_stu ---\n";
+    Student fill_stu(99, "Backup"); 
+    std::cout << "--------------------------------\n";
+    
+    std::cout << "\n[动作] vec.resize(3, fill_stu) -> 扩容并用原型拷贝填充\n";
+    vec.resize(3, fill_stu);
+    std::cout << "结果 -> Size: " << vec.size() << ", Cap: " << vec.capacity() << "\n";
+    std::cout << "内容: " << vec << "\n\n";
+
+    std::cout << "[动作] vec.resize(5) -> 进一步扩容，使用默认构造填充\n";
+    vec.resize(5);
+    std::cout << "结果 -> Size: " << vec.size() << ", Cap: " << vec.capacity() << "\n";
+    std::cout << "内容: " << vec << "\n\n";
+
+    std::cout << "[动作] vec.resize(2) -> 尺寸截断到 2（应该触发 3 次析构，但 Cap 不变）\n";
+    vec.resize(2);
+    std::cout << "结果 -> Size: " << vec.size() << ", Cap: " << vec.capacity() << "\n";
+    std::cout << "内容: " << vec << "\n\n";
+}
+
+// --- 测试 7: shrink_to_fit() 瘦身逻辑 ---
+void test_shrink_to_fit() {
+    std::cout << "========================================\n";
+    std::cout << ">>> 开始测试: shrink_to_fit() \n";
+    std::cout << "========================================\n";
+
+    // 为了让 shrink_to_fit 有效，我们先构造一个有闲置空间的状态
+    dc::MyVector<Student> vec;
+    vec.reserve(5);
+    vec.push_back(Student(10, "Stay1"));
+    vec.push_back(Student(20, "Stay2"));
+
+    std::cout << "1. 压缩前状态 -> Size: " << vec.size() << ", Cap: " << vec.capacity() << "\n";
+    
+    if (vec.capacity() > vec.size()) {
+        std::cout << "\n[动作] vec.shrink_to_fit() -> 释放闲置内存，压缩地皮\n";
+        std::cout << "(这会触发有效对象的重新搬迁与老家析构)\n";
+        std::cout << "-------------------------------------\n";
+        vec.shrink_to_fit();
+        std::cout << "-------------------------------------\n";
+        std::cout << "压缩后状态 -> Size: " << vec.size() << ", Cap: " << vec.capacity() << "\n";
+        std::cout << "内容: " << vec << "\n\n";
+    } else {
+        std::cout << "当前无闲置内存，无需压缩。\n\n";
+    }
+}
+
+// --- 测试 8: emplace_back 对比 push_back ---
+void test_emplace_vs_push() {
+    std::cout << "========================================\n";
+    std::cout << ">>> 开始测试: push_back vs emplace_back \n";
+    std::cout << "========================================\n";
+
+    dc::MyVector<Student> vec;
+    vec.reserve(4); 
+
+    std::cout << "\n[测试] 使用传统 push_back 插入:\n";
+    std::cout << "------------------------------------\n";
+    vec.push_back(Student(1, "Push_Way"));
+    std::cout << "------------------------------------\n";
+
+    std::cout << "\n[测试] 使用现代 emplace_back 插入:\n";
+    std::cout << "------------------------------------\n";
+    vec.emplace_back(2, "Emplace_Way");
+    std::cout << "------------------------------------\n";
+
+    std::cout << "\n内容: " << vec << "\n\n";
+}
+
+int main() {
+    // runPerformanceAnalysis(); // 高性能检测
+    // runAutomatedTests(); // 冒烟测试
+    std::cout << "========================================\n";
+    std::cout << ">>> 启动运行 MyVector 自动化测试集 <<<\n";
+    std::cout << "========================================\n\n";
+
+    // 💡 提示：在 VS Code 中，把光标停留在不需要的测试行上，按 Ctrl+/ 即可秒开/秒关！
+    
+    // test_basic_construction();      // 测试 1
+    // test_nested_vector();           // 测试 2
+    // test_complex_struct_and_erase(); // 测试 3
+    // test_deep_copy();               // 测试 4
+    // test_stress_and_clear();        // 测试 5
+    // test_resize();                  // 测试 6
+    // test_shrink_to_fit();           // 测试 7
+    
+    test_emplace_vs_push();            // 测试 8（当前专注于测试它）
+
+    std::cout << "========================================\n";
+    std::cout << ">>> 所有的前台测试项执行完毕 <<<\n";
+    std::cout << "========================================\n";
     return 0;
 }
 
