@@ -312,7 +312,10 @@ namespace dc {
         // const版本：只读
         const_iterator begin() const { return data; }
         const_iterator end() const { return data + _size; }
-
+        // 在类中补充这两个显式只读接口
+        const_iterator cbegin() const noexcept { return data; }
+        const_iterator cend() const noexcept { return data + _size; }
+        
         // 获取第一个元素
         T& front() { return data[0]; }
         const T& front() const { return data[0]; }

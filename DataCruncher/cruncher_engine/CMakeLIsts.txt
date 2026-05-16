@@ -1,0 +1,11 @@
+# 1. 收集该项目下的源文件
+file(GLOB ENGINE_SOURCES "src/*.cpp")
+
+# 2. 生成可行文件
+add_executable(DataApp ${ENGINE_SOURCES})
+
+# 3. 指定该项目头文件
+target_include_directories(DataApp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+# 4. 链接基础库MyVector
+target_link_libraries(DataApp PRIVATE MyVectorLib)

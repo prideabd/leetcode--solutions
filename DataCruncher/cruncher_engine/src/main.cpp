@@ -6,8 +6,8 @@
 #include <chrono>
 #include <random>
 #include <string>
-#include <DataCruncher/DataCruncher.hpp>
-#include <DataCruncher/ReportGenerator.hpp>
+#include "DataCruncher.hpp"
+#include "ReportGenerator.hpp"
 
 // 测试用的复杂结构体
 struct Student {

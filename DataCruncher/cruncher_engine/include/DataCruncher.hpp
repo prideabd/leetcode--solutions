@@ -8,7 +8,7 @@
 #include <numeric>
 #include <cmath>
 #include <cstdlib>
-#include <DataCruncher/MyVector.hpp>
+#include <MyVector.hpp>
 
 namespace dc {
     // 模版DataCruncher

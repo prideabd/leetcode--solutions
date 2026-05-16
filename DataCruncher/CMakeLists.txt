@@ -4,28 +4,23 @@ project(DataCruncher VERSION 0.1)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 1. 寻找所有的源文件（包含 src 目录下的 main.cpp 等）
-file(GLOB_RECURSE SOURCES "src/*.cpp")
-
-# 2. 定义你的接口库 (Header-only Library)
-# 因为模板类都在 .hpp 中，这种库在 CMake 中被称为 INTERFACE 库
-add_library(DataCruncherLib INTERFACE)
-
-# 3. 核心：配置头文件搜索路径
-# 这里告诉 CMake，任何链接了 DataCruncherLib 的目标都会自动获得 include 文件夹作为搜索根目录。
-# BUILD_INTERFACE (开发模式)：CMake 会去 ${CMAKE_CURRENT_SOURCE_DIR}/include 找头文件。
-# INSTALL_INTERFACE：去安装目录下的 include 文件夹找
-target_include_directories(DataCruncherLib INTERFACE 
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
+# =================================================================
+# 1. 定义全局公共基础库 (MyVector)
+# =================================================================
+# 因为 MyVector 是 header-only 模板库，我们把它定义为 INTERFACE 库
+add_library(MyVectorLib INTERFACE)
+# 任何子项目只要 link 了 MyVectorLib，就能直接 #include "MyVector.hpp"
+target_include_directories(MyVectorLib INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/core_libs/MyVector/include>
 )
 
-# 4. 生成可执行文件
-add_executable(DataApp ${SOURCES})
+# =================================================================
+# 2. 调度子目录（告诉 CMake 去哪里找真正的业务项目）
+# =================================================================
+add_subdirectory(cruncher_engine)
+add_subdirectory(games/ThunderStrike)
 
-# 5. 关键的一步：将可执行文件与你的库“绑定”
-# 这样 DataApp 就能找到 <DataCruncher/DataCruncher.hpp> 了
-target_link_libraries(DataApp PRIVATE DataCruncherLib)
+
 
 
 
