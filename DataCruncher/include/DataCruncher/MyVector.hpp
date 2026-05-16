@@ -136,14 +136,68 @@ namespace dc {
                 throw;
             }
             // 4. 释放旧内存
-            destroy_elements(data, data + _size);
             ::operator delete(data);
             // delete[] data;
             data = new_data;
             _capacity = new_cacpacity;
         }
 
+        // 调整有效元素个数
+        void resize(size_t new_size, const T& value = T()) {
+            if (new_size < _size) {
+                // 尺寸变小，销毁后续对象，无需释放内存
+                destroy_elements(data + new_size, data + _size);
+                _size = new_size;
+            } else if (new_size > _size) {
+                // 尺寸变大
+                // 先判断是否超出最大容量，分配空间
+                if (new_size > _capacity) {
+                    reserve(new_size);
+                }
+                for (size_t i = _size; i < new_size; ++i) {
+                    new (data + i) T(value);
+                }
+                _size = new_size;
+            }
+        }
+
+        // 手动释放内存
+        void shrink_to_fit() {
+            if (_size >= _capacity) {
+                return;
+            }
+            if (_size == 0) {
+                ::operator delete(data);
+                data = nullptr;
+                _capacity = 0;
+                return;
+            }
+            // 1.申请新内存，大小为_size * sizeof(T)
+            T* new_data = static_cast<T*>(::operator new(_size * sizeof(T)));
+            // 2.移动旧数据的同时销毁旧对象
+            for (size_t i = 0; i < _size; ++i) {
+                new (new_data + i) T(std::move_if_noexcept(data[i]));
+                data[i].~T();
+            }
+            // 3.释放旧内存
+            ::operator delete(data);
+            data = new_data;
+            _capacity = _size;
+        }
+
         // --- 修改器 ---
+
+        // emplace_back 的核心思想是：我不接收对象，我接收用来构造对象的参数！
+        template <typename... Args>
+        void emplace_back(Args&&... args) {
+            // 1. 检查容量
+            if (_size >= _capacity) {
+                reserve(_capacity == 0 ? 1 : _capacity * 2);
+            }
+            // 2. 就地构造，不去调用任何构造函数
+            new (data + _size) T(std::forward<Args>(args)...);
+            _size++;
+        }
 
         // 添加元素到末尾
         void push_back(const T& value) {
