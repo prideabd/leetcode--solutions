@@ -4,6 +4,7 @@
 #include <initializer_list>
 #include <new>
 #include <utility>
+#include <type_traits>
 
 namespace dc {
     template <typename T>
@@ -14,7 +15,7 @@ namespace dc {
         size_t _capacity;   // 最大容量
 
         // 销毁[first, last)范围内所有对象
-        void destroy_elements(T* first, T* last) {
+        void destroy_elements(T* first, T* last) noexcept {
             for (; first != last; ++first) {
                 first->~T();
             }
@@ -109,37 +110,48 @@ namespace dc {
             return *this;
         }
 
+        MyVector& operator=(MyVector&& other) noexcept {
+            if (this != &other) {
+                clear();
+                ::operator delete(data);
+                data = other.data;
+                _size = other._size;
+                _capacity = other._capacity;
+                other.data = nullptr;
+                other._size = 0;
+                other._capacity = 0;
+            }
+            return *this;
+        }
+
         // --- 核心内存控制 ---
         // 扩容函数
-        void reserve(size_t new_cacpacity) {
-            // std::cout << "DEBUG: 正在扩容至 " << new_cacpacity << std::endl;
-            if (new_cacpacity <= _capacity) {
+        void reserve(size_t new_capacity) {
+            // std::cout << "DEBUG: 正在扩容至 " << new_capacity << std::endl;
+            if (new_capacity <= _capacity) {
                 return;
             }
             // 1. 分配原始内存
-            T* new_data = static_cast<T*>(::operator new(new_cacpacity * sizeof(T)));
-            // T* new_data = new T[new_cacpacity];
+            T* new_data = static_cast<T*>(::operator new(new_capacity * sizeof(T)));
 
             size_t i = 0;
             try {
                 // 2. 搬运数据
                 for (; i < _size; ++i) {
                     new (new_data + i) T(std::move_if_noexcept(data[i]));
-                    // new_data[i] = data[i];
-                    data[i].~T(); // 销毁原对象
                 }
             }
             catch (...) {
-                // 3. 异常处理
+                // 3. 异常处理，销毁新对象并释放新内存
                 destroy_elements(new_data, new_data + i);
                 ::operator delete(new_data);
                 throw;
             }
-            // 4. 释放旧内存
+            // 4. 销毁旧对象并释放旧内存
+            destroy_elements(data, data + _size);
             ::operator delete(data);
-            // delete[] data;
             data = new_data;
-            _capacity = new_cacpacity;
+            _capacity = new_capacity;
         }
 
         // 调整有效元素个数
@@ -199,6 +211,90 @@ namespace dc {
             _size++;
         }
 
+        template <typename... Args>
+        iterator emplace(const_iterator pos, Args&&... args) {
+            // 1. 安全检查，确保pos属于当前范围
+            if (pos < begin() || pos > end()) {
+                throw std::out_of_range("MyVector::emplace position out of range");
+            }
+            // 计算插入点下标
+            size_t index = static_cast<size_t>(pos - begin());
+
+            // 2. 性能与安全性判断
+            constexpr bool safe_inplace = std::is_nothrow_move_assignable_v<T> && std::is_nothrow_constructible_v<T, Args...>;
+
+            // A：需要扩容或者操作可能抛异常，选择在新空间重构
+            if (_size + 1 > _capacity || !safe_inplace) {
+                size_t new_capcity = (_capacity == 0 ? 1 : _capacity * 2);
+                // 为了避免扩容后仍然不够，确保新容量至少能容纳_size + 1个元素
+                if (new_capcity < _size + 1) {
+                    new_capcity = _size + 1;
+                }
+                T* new_data = static_cast<T*>(::operator new(new_capcity * sizeof(T)));
+                size_t constructed = 0; // 记录已构造对象数量，用于异常回滚
+                try {
+                    // 搬运插入位置之前的元素
+                    for (size_t i = 0; i < index; ++i) {
+                        new (new_data + i) T(std::move_if_noexcept(data[i]));
+                        ++constructed;
+                    }
+                    // 构造新元素
+                    new (new_data + index) T(std::forward<Args>(args)...);
+                    ++constructed;
+                    // 搬运之后的元素
+                    for (size_t j = index; j < _size; ++j) {
+                        new (new_data + j + 1) T(std::move_if_noexcept(data[j]));
+                        ++constructed;
+                    }
+                } catch (...) {
+                    // 强异常安全保证：如果中途失败，销毁新构造对象并释放内存
+                    destroy_elements(new_data, new_data + constructed);
+                    ::operator delete(new_data);
+                    throw;
+                }
+                // 未出现异常，清理旧对象以及内存，更新指针和容量
+                destroy_elements(data, data + _size);
+                ::operator delete(data);
+                data = new_data;
+                _capacity = new_capcity;
+                ++_size;
+                return data + index;
+            }
+
+            // B: 容量足够
+            T* insert_pos = data + index;
+            if (index == _size) {
+                // 末尾插入，直接构造
+                new (data + _size) T(std::forward<Args>(args)...);
+                ++_size;
+                return insert_pos;
+            }
+
+            // 解决自引用风险：先构造临时对象，防止 args 引用的是容器内部即将被平移的元素
+            T tmp(std::forward<Args>(args)...);
+
+            // ① 在末尾空白处构造最后一个元素的副本
+            new (data + _size) T(std::move_if_noexcept(data[_size - 1]));
+            // ② 逆向平移
+            for (size_t i = _size - 1; i > index; --i) {
+                data[i] = std::move(data[i - 1]);
+            }
+            // ③ 将临时对象移动赋值到目标位置（此时 data[index] 是已移走状态，赋值是安全的）
+            data[index] = std::move(tmp);
+
+            ++_size;
+            return insert_pos;
+        }
+
+        // insert函数
+        iterator insert(const_iterator pos, const T& value) {
+            return emplace(pos, value);
+        }
+        iterator insert(const_iterator pos, T&& value) {
+            return emplace(pos, std::move(value));
+        }
+
+
         // 添加元素到末尾
         void push_back(const T& value) {
             // if (_size > _capacity) { 
@@ -238,24 +334,31 @@ namespace dc {
 
         // 通过指针范围删除元素(迭代器)
         // 返回被删元素的下一个有效元素
-        T* erase(T* first, T* last) {
-            if (first < begin() || last > end() || first >= last) {
-                return last;
-            } 
-            // 计算移动步长
+        iterator erase(iterator first, iterator last) {
+            if (first < begin() || last > end()) return end();
+            if (first >= last) return first;
+
             size_t num_to_remove = last - first;
             T* end_ptr = data + _size;
 
-            // 1. 销毁要删除的对象
-            for (T* p = first; p != last; ++p) {
-                p->~T();
+            if constexpr (std::is_move_assignable_v<T>) {
+                T* write = first;
+                T* read = last;
+                for (; read != end_ptr; ++write, ++read) {
+                    *write = std::move(*read);
+                }
+                destroy_elements(data + _size - num_to_remove, data + _size);
+            } else {
+                // 对于不可赋值类型，先销毁被移除的槽，再就地移动构造后销毁源对象
+                for (T* p = first; p != last; ++p) {
+                    p->~T();
+                }
+                for (T* p = last; p != end_ptr; ++p) {
+                    new (p - num_to_remove) T(std::move(*p));
+                    p->~T();
+                }
             }
-            // 2. 移动后面元素
-            for (T* p = last; p != end_ptr; ++p) {
-                // p - num_to_remove代表又回到first位置
-                new (p - num_to_remove) T(std::move(*p));
-                p->~T();
-            }
+
             _size -= num_to_remove;
             return first;
         }
@@ -304,8 +407,8 @@ namespace dc {
         // 是否为空
         bool empty() const { return _size == 0; }
 
-        // 简单的迭代器，非const版本: 允许修改
-        using iterator = T*;
+        // 简单的正向迭代器，非const版本: 允许修改
+        
         using const_iterator = const T*;
         iterator begin() { return data; }
         iterator end() { return data + _size; }
@@ -316,6 +419,20 @@ namespace dc {
         const_iterator cbegin() const noexcept { return data; }
         const_iterator cend() const noexcept { return data + _size; }
         
+        // 反向迭代器：实现的话，需要定义一个类
+        // 类内对operator--和operator++进行重载，来实现反向迭代
+        // 目前直接调用std::reverse_iterator
+        using reverse_iterator = std::reverse_iterator<iterator>;
+        using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+        // 非const版本
+        reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
+        reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
+        // const版本
+        const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
+        const_reverse_iterator rend() const noexcept { return const_reverse_iterator(begin()); }
+        // 显式只读接口
+        const_reverse_iterator crbegin() const noexcept {return const_reverse_iterator(end()); }
+        const_reverse_iterator crend() const noexcept { return const_reverse_iterator(begin()); }
         // 获取第一个元素
         T& front() { return data[0]; }
         const T& front() const { return data[0]; }
