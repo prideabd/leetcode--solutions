@@ -1,16 +1,25 @@
-# 忽略 CMake 自动生成的文件夹
-/build/
-/CMakeFiles/
+# Ignore build directories anywhere in the tree
+**/build/
+**/CMakeFiles/
 
-# 忽略 CMake 生成的缓存和配置文件
-cmake_install.cmake
-CMakeCache.txt
-CTestTestfile.cmake
-Makefile
+# CMake generated files
+**/cmake_install.cmake
+**/CMakeCache.txt
+**/CTestTestfile.cmake
+**/Makefile
 
-# 忽略编译出的可执行文件（根据你的程序名修改）
-.vscode/
+# Objects, binaries and logs
+*.o
+*.obj
 *.exe
 *.out
+*.log
+*.tmp
+
+# Editor / OS files
+.vscode/
+.idea/
 .DS_Store
-/bin/
+
+# Ignore generated IDE/system folders
+*.cmake
